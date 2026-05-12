@@ -43,6 +43,37 @@ local function valid_args(name, pred, count, strict_count)
   return true
 end
 
+local function get_capture_nodes(match, capture_id)
+  local capture = match[capture_id]
+  if not capture then
+    return
+  end
+
+  if type(capture) ~= "table" then
+    return { capture }
+  end
+
+  if #capture == 0 then
+    return
+  end
+
+  return capture
+end
+
+local function get_capture_text(match, capture_id, bufnr, metadata)
+  local nodes = get_capture_nodes(match, capture_id)
+  if not nodes then
+    return
+  end
+
+  local text = {}
+  for _, node in ipairs(nodes) do
+    table.insert(text, vim.treesitter.get_node_text(node, bufnr, metadata) or "")
+  end
+
+  return table.concat(text, "")
+end
+
 ---@param match (TSNode|nil)[]
 ---@param _pattern string
 ---@param _bufnr integer
@@ -113,11 +144,10 @@ end, opts)
 ---@return boolean|nil
 query.add_directive("set-lang-from-mimetype!", function(match, _, bufnr, pred, metadata)
   local capture_id = pred[2]
-  local node = match[capture_id]
-  if not node then
+  local type_attr_value = get_capture_text(match, capture_id, bufnr)
+  if not type_attr_value then
     return
   end
-  local type_attr_value = vim.treesitter.get_node_text(node, bufnr)
   local configured = html_script_type_languages[type_attr_value]
   if configured then
     metadata["injection.language"] = configured
@@ -134,12 +164,11 @@ end, opts)
 ---@return boolean|nil
 query.add_directive("set-lang-from-info-string!", function(match, _, bufnr, pred, metadata)
   local capture_id = pred[2]
-  local node = match[capture_id]
-  if not node then
+  local injection_alias = get_capture_text(match, capture_id, bufnr)
+  if not injection_alias then
     return
   end
-  local injection_alias = vim.treesitter.get_node_text(node, bufnr):lower()
-  metadata["injection.language"] = get_parser_from_markdown_info_string(injection_alias)
+  metadata["injection.language"] = get_parser_from_markdown_info_string(injection_alias:lower())
 end, opts)
 
 -- Just avoid some annoying warnings for this directive
@@ -154,12 +183,11 @@ query.add_directive("make-range!", function() end, opts)
 ---@return boolean|nil
 query.add_directive("downcase!", function(match, _, bufnr, pred, metadata)
   local id = pred[2]
-  local node = match[id]
-  if not node then
+  local text = get_capture_text(match, id, bufnr, { metadata = metadata[id] })
+  if not text then
     return
   end
 
-  local text = vim.treesitter.get_node_text(node, bufnr, { metadata = metadata[id] }) or ""
   if not metadata[id] then
     metadata[id] = {}
   end
