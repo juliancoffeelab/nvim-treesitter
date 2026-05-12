@@ -231,6 +231,37 @@ function M.insert_to_path(object, path, value)
   curr_obj[path[#path]] = value
 end
 
+--- Collapse a capture list into one node.
+---@param capture TSNode|TSNode[]|nil
+---@param prefer_last boolean
+---@return TSNode|nil
+local function get_capture_node(capture, prefer_last)
+  if type(capture) == "userdata" then
+    return capture
+  end
+
+  if type(capture) ~= "table" or #capture == 0 then
+    return nil
+  end
+
+  if prefer_last then
+    for i = #capture, 1, -1 do
+      if type(capture[i]) == "userdata" then
+        return capture[i]
+      end
+    end
+    return nil
+  end
+
+  for _, node in ipairs(capture) do
+    if type(node) == "userdata" then
+      return node
+    end
+  end
+
+  return nil
+end
+
 ---@param query Query
 ---@param bufnr integer
 ---@param start_row integer
@@ -260,7 +291,10 @@ function M.iter_prepared_matches(query, qnode, bufnr, start_row, end_row)
         local name = query.captures[id] -- name of the capture in the query
         if name ~= nil then
           local path = split(name .. ".node")
-          M.insert_to_path(prepared_match, path, node)
+          local capture = get_capture_node(node, false)
+          if capture then
+            M.insert_to_path(prepared_match, path, capture)
+          end
           local metadata_path = split(name .. ".metadata")
           M.insert_to_path(prepared_match, metadata_path, metadata[id])
         end
@@ -276,11 +310,14 @@ function M.iter_prepared_matches(query, qnode, bufnr, start_row, end_row)
             M.insert_to_path(prepared_match, split(pred[2]), pred[3])
           end
           if pred[1] == "make-range!" and type(pred[2]) == "string" and #pred == 4 then
-            M.insert_to_path(
-              prepared_match,
-              split(pred[2] .. ".node"),
-              tsrange.TSRange.from_nodes(bufnr, match[pred[3]], match[pred[4]])
+            local range = tsrange.TSRange.from_nodes(
+              bufnr,
+              get_capture_node(match[pred[3]], false),
+              get_capture_node(match[pred[4]], true)
             )
+            if range then
+              M.insert_to_path(prepared_match, split(pred[2] .. ".node"), range)
+            end
           end
         end
       end

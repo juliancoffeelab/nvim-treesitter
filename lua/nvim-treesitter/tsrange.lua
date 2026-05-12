@@ -6,6 +6,34 @@ local api = vim.api
 local ts_utils = require "nvim-treesitter.ts_utils"
 local parsers = require "nvim-treesitter.parsers"
 
+--- Normalize captures into a treesitter node.
+local function as_node(capture, prefer_last)
+  if type(capture) == "userdata" then
+    return capture
+  end
+
+  if type(capture) ~= "table" then
+    return nil
+  end
+
+  if prefer_last then
+    for i = #capture, 1, -1 do
+      if type(capture[i]) == "userdata" then
+        return capture[i]
+      end
+    end
+    return nil
+  end
+
+  for _, node in ipairs(capture) do
+    if type(node) == "userdata" then
+      return node
+    end
+  end
+
+  return nil
+end
+
 local function get_byte_offset(buf, row, col)
   return api.nvim_buf_get_offset(buf, row) + vim.fn.byteidx(api.nvim_buf_get_lines(buf, row, row + 1, false)[1], col)
 end
@@ -24,8 +52,15 @@ end
 
 function TSRange.from_nodes(buf, start_node, end_node)
   TSRange.__index = TSRange
-  local start_pos = start_node and { start_node:start() } or { end_node:start() }
-  local end_pos = end_node and { end_node:end_() } or { start_node:end_() }
+  start_node = as_node(start_node, false) or as_node(end_node, false)
+  end_node = as_node(end_node, true) or as_node(start_node, true)
+
+  if not start_node or not end_node then
+    return nil
+  end
+
+  local start_pos = { start_node:start() }
+  local end_pos = { end_node:end_() }
   return setmetatable({
     start_pos = { start_pos[1], start_pos[2], start_pos[3] },
     end_pos = { end_pos[1], end_pos[2], end_pos[3] },
